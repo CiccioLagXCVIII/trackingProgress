@@ -1,0 +1,12 @@
+# Ambiente Python
+venv/
+__pycache__/
+*.pyc
+
+# Dati sensibili / personali - MAI versionare
+gadgetBridgeSync/Gadgetbridge.db
+XiaomiTokenExtractor/
+dashboardData.db
+
+# Editor
+.vscode/
