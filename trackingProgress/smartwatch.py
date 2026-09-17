@@ -19,7 +19,128 @@ def getAvailableDevices(conn):
         return pd.DataFrame()
 
 
-# AA Parser Specifico Per La Famiglia Xiaomi / Redmi / Poco
+# AA Mappa Dei Codici Fase Sonno Specifici Per Xiaomi
+# BB Corrispondenza Verificata Confrontando Le Durate Calcolate Con I Totali Ufficiali Di XIAOMI_SLEEP_TIME_SAMPLE
+XIAOMI_SLEEP_STAGE_MAP = {
+    2: "Sonno Profondo",
+    3: "Sonno Leggero",
+    4: "Sonno REM",
+    5: "Sveglio",
+}
+
+
+# AA Parser Per I Dati Del Sonno Della Famiglia Xiaomi
+def parseXiaomiSleep(conn, deviceId):
+    # BB Estrazione Delle Sessioni Di Sonno Aggregate (Una Riga Per Notte)
+    querySessions = f"""
+        SELECT
+            TIMESTAMP,
+            WAKEUP_TIME,
+            TOTAL_DURATION,
+            DEEP_SLEEP_DURATION,
+            LIGHT_SLEEP_DURATION,
+            REM_SLEEP_DURATION,
+            AWAKE_DURATION
+        FROM XIAOMI_SLEEP_TIME_SAMPLE
+        WHERE DEVICE_ID = {deviceId}
+        ORDER BY TIMESTAMP ASC;
+    """
+    sleepSessions = pd.read_sql_query(querySessions, conn)
+
+    # BB Estrazione Della Timeline Dettagliata Delle Fasi (Per Il Drill-Down Giornaliero)
+    queryStages = f"""
+        SELECT
+            TIMESTAMP,
+            STAGE
+        FROM XIAOMI_SLEEP_STAGE_SAMPLE
+        WHERE DEVICE_ID = {deviceId}
+        ORDER BY TIMESTAMP ASC;
+    """
+    stageRows = pd.read_sql_query(queryStages, conn)
+
+    sleepStages = pd.DataFrame()
+
+    if not sleepSessions.empty:
+        # CC Associazione Di Ogni Fase Alla Sessione Di Appartenenza
+        # DD Necessario Perche' XIAOMI_SLEEP_STAGE_SAMPLE Non Ha Un ID Di Sessione Esplicito
+        # EE Il Confronto Avviene Sui Millisecondi Grezzi, Prima Di Qualsiasi Conversione Di Fuso Orario
+        stageBlocks = []
+        for _, session in sleepSessions.iterrows():
+            sessionStartMs = session["TIMESTAMP"]
+            sessionEndMs = session["WAKEUP_TIME"]
+
+            mask = (stageRows["TIMESTAMP"] >= sessionStartMs) & (stageRows["TIMESTAMP"] < sessionEndMs)
+            sessionStages = stageRows[mask].copy()
+
+            if sessionStages.empty:
+                continue
+
+            # EE Calcolo Della Durata Di Ogni Fase Come Differenza Con La Fase Successiva
+            # EE L'Ultima Fase Della Notte Dura Fino All'Orario Di Sveglia Della Sessione
+            sessionStages["NEXT_TIMESTAMP"] = sessionStages["TIMESTAMP"].shift(-1)
+            sessionStages.loc[sessionStages.index[-1], "NEXT_TIMESTAMP"] = sessionEndMs
+            sessionStages["Durata (min)"] = ((sessionStages["NEXT_TIMESTAMP"] - sessionStages["TIMESTAMP"]) / 1000 / 60).round(1)
+            sessionStages["SESSION_WAKEUP_TIME"] = sessionEndMs
+
+            stageBlocks.append(sessionStages)
+
+        if stageBlocks:
+            sleepStages = pd.concat(stageBlocks, ignore_index=True)
+
+            sleepStages["Inizio Fase"] = (
+                pd.to_datetime(sleepStages["TIMESTAMP"], unit="ms", utc=True)
+                .dt.tz_convert("Europe/Rome")
+                .dt.tz_localize(None)
+            )
+            # EE La Fase Viene Attribuita Alla Data Di Sveglia Della Sessione Di Appartenenza
+            sleepStages["Data"] = (
+                pd.to_datetime(sleepStages["SESSION_WAKEUP_TIME"], unit="ms", utc=True)
+                .dt.tz_convert("Europe/Rome")
+                .dt.date
+            )
+            sleepStages["Fase"] = sleepStages["STAGE"].map(XIAOMI_SLEEP_STAGE_MAP)
+
+            # EE Segnalazione Di Eventuali Codici Fase Non Ancora Mappati, Senza Interrompere Lo Script
+            unknownStages = sleepStages.loc[sleepStages["Fase"].isna(), "STAGE"].unique()
+            if len(unknownStages) > 0:
+                print(f"{utility.CLR_ERRORE}[ERRORE]{utility.CLR_RESET} Codici Fase Sonno Non Riconosciuti: {list(unknownStages)}")
+                sleepStages["Fase"] = sleepStages["Fase"].fillna("Sconosciuto")
+
+            sleepStages = sleepStages[["Data", "Inizio Fase", "Fase", "Durata (min)"]]
+
+        # CC Conversione Delle Colonne Di Sessione In Orario Locale (Fatta Dopo Aver Usato I Millisecondi Grezzi Sopra)
+        sleepSessions["Inizio Sonno"] = (
+            pd.to_datetime(sleepSessions["TIMESTAMP"], unit="ms", utc=True)
+            .dt.tz_convert("Europe/Rome")
+            .dt.tz_localize(None)
+        )
+        sleepSessions["Fine Sonno"] = (
+            pd.to_datetime(sleepSessions["WAKEUP_TIME"], unit="ms", utc=True)
+            .dt.tz_convert("Europe/Rome")
+            .dt.tz_localize(None)
+        )
+        # CC La Notte Viene Attribuita Alla Data Della Sveglia (Convenzione Standard Di Sleep-Tracking)
+        sleepSessions["Data"] = sleepSessions["Fine Sonno"].dt.date
+
+        renameMapSleep = {
+            "TOTAL_DURATION": "Durata Totale (min)",
+            "DEEP_SLEEP_DURATION": "Sonno Profondo (min)",
+            "LIGHT_SLEEP_DURATION": "Sonno Leggero (min)",
+            "REM_SLEEP_DURATION": "Sonno REM (min)",
+            "AWAKE_DURATION": "Tempo Sveglio (min)",
+        }
+        sleepSessions = sleepSessions.rename(columns=renameMapSleep)
+
+        columnsSessions = [
+            "Data", "Inizio Sonno", "Fine Sonno", "Durata Totale (min)",
+            "Sonno Profondo (min)", "Sonno Leggero (min)", "Sonno REM (min)", "Tempo Sveglio (min)"
+        ]
+        sleepSessions = sleepSessions[columnsSessions]
+
+    return sleepSessions, sleepStages
+
+
+# AA Parser Specifico Per La Famiglia Xiaomi / Redmi / Poco (Stesso Protocollo, Stesse Tabelle)
 def parseXiaomiFamily(conn, deviceId):
     # BB Estrazione Delle Rilevazioni Al Minuto Filtrate Per DEVICE_ID
     queryActivity = f"""
@@ -140,11 +261,15 @@ def parseXiaomiFamily(conn, deviceId):
         ]
         dailySummary = dailySummary[columnsDaily]
 
-    return activityData, dailySummary
+    # BB Estrazione Dei Dati Del Sonno
+    sleepSessions, sleepStages = parseXiaomiSleep(conn, deviceId)
+
+    return activityData, dailySummary, sleepSessions, sleepStages
 
 
-# AA Funzione Master Per Elaborare I Dati Smartwatch Supportando Più Modelli
-# BB targetDevice Può Essere: None (Auto-Detect), Oppure Una Stringa Con Il Nome/Produttore Del Dispositivo
+# AA Funzione Master Per Elaborare I Dati Smartwatch
+# BB Supporta Solo Dispositivi Xiaomi / Redmi / Poco (Stesso Protocollo Xiaomi Wear)
+# CC Per Aggiungere Altre Marche: Fork Del Progetto, Il Codice E Pubblico Su GitHub
 def processSmartwatchData(DB_PATH, targetDevice=None):
     # AA Definizione Dei Tag Colorati Per La Visualizzazione
     tagSmartwatch = f"{utility.CLR_SMARTWATCH}[SMARTWATCH]{utility.CLR_RESET}"
@@ -153,7 +278,7 @@ def processSmartwatchData(DB_PATH, targetDevice=None):
     # AA Verifica Esistenza Del Database Gadgetbridge
     if not os.path.exists(DB_PATH):
         print(f"\n{tagSmartwatch} File Database Non Trovato Nel Percorso Specificato: {DB_PATH}\n")
-        return pd.DataFrame(), pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
     # BB Apertura Connessione Verso Il Database SQLite
     conn = sqlite3.connect(DB_PATH)
@@ -163,7 +288,7 @@ def processSmartwatchData(DB_PATH, targetDevice=None):
     if devicesDf.empty:
         print(f"\n{tagErrore} Nessun Dispositivo Rilevato Nella Tabella DEVICE Di Gadgetbridge.\n")
         conn.close()
-        return pd.DataFrame(), pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
     # BB Selezione Del Dispositivo Target (Automatica O Tramite Input Utente)
     selectedDevice = None
@@ -190,23 +315,16 @@ def processSmartwatchData(DB_PATH, targetDevice=None):
 
     print(f"\n{tagSmartwatch} Dispositivo Selezionato: {utility.CLR_BOLD}{deviceName}{utility.CLR_RESET} (ID: {deviceId}, Produttore: {manufacturer})")
 
-    # AA Smistamento Al Parser Dedicato In Base Al Produttore/Famiglia
+    # AA Solo Famiglia Xiaomi / Redmi / Poco E Supportata
     activityData = pd.DataFrame()
     dailySummary = pd.DataFrame()
+    sleepSessions = pd.DataFrame()
+    sleepStages = pd.DataFrame()
 
-    # BB Famiglia Xiaomi / Redmi / Poco
     if manufacturer in ["XIAOMI", "REDMI", "POCO"] or "XIAOMI" in typeName or "REDMI" in typeName:
-        activityData, dailySummary = parseXiaomiFamily(conn, deviceId)
-
-    # BB Segnaposto Per Future Famiglie (Amazfit/Huami, Huawei, Garmin, CMF, ecc.)
-    elif manufacturer in ["HUAMI", "AMAZFIT"]:
-        print(f"{tagErrore} Il Supporto Per Amazfit / Huami È In Fase Di Predisposizione.")
-    elif manufacturer in ["HUAWEI", "HONOR"]:
-        print(f"{tagErrore} Il Supporto Per Huawei / Honor È In Fase Di Predisposizione.")
-    elif manufacturer in ["GARMIN"]:
-        print(f"{tagErrore} Il Supporto Per Garmin È In Fase Di Predisposizione.")
+        activityData, dailySummary, sleepSessions, sleepStages = parseXiaomiFamily(conn, deviceId)
     else:
-        print(f"{tagErrore} Famiglia Produttore '{manufacturer}' Non Ancora Supportata.")
+        print(f"{tagErrore} Produttore '{manufacturer}' Non Supportato. Questo Script Gestisce Solo Dispositivi Xiaomi/Redmi/Poco.")
 
     # BB Chiusura Connessione Database
     conn.close()
@@ -216,22 +334,36 @@ def processSmartwatchData(DB_PATH, targetDevice=None):
         print(
             f"{tagSmartwatch} Dati Smartwatch Estratti Con Successo: "
             f"{utility.CLR_BOLD}{len(activityData)}{utility.CLR_RESET} Rilevazioni, "
-            f"{utility.CLR_BOLD}{len(dailySummary)}{utility.CLR_RESET} Giorni Di Sintesi.\n"
+            f"{utility.CLR_BOLD}{len(dailySummary)}{utility.CLR_RESET} Giorni Di Sintesi, "
+            f"{utility.CLR_BOLD}{len(sleepSessions)}{utility.CLR_RESET} Notti Registrate.\n"
         )
 
-    return activityData, dailySummary
+    return activityData, dailySummary, sleepSessions, sleepStages
 
 
 # AA Blocco Di Test Diretto Dello Script
 if __name__ == "__main__":
-    DB_PATH = "/home/lag/privateDashboard/gadgetBridgeSync/Gadgetbridge.db"
+    DB_PATH = "/mnt/c/Users/cicci/Documents/Appunti_E_Personale/trackingProgressi/gadgetBridgeSync/Gadgetbridge.db"
 
-    # Test 1: Rilevamento automatico (consigliato per la maggior parte dei casi)
-    activityData, dailySummary = processSmartwatchData(DB_PATH)
+    if not os.path.exists(DB_PATH):
+        print(f"File Non Trovato: {DB_PATH}")
+    else:
+        activityData, dailySummary, sleepSessions, sleepStages = processSmartwatchData(DB_PATH)
 
-    # Test 2: Selezionando esplicitamente un modello/brand
-    # activityData, dailySummary = processSmartwatchData(DB_PATH, targetDevice="Redmi")
+        if not activityData.empty:
+            print(f"Attivita: {len(activityData)} righe, dal {activityData['Data'].min()} al {activityData['Data'].max()}")
+        else:
+            print("Nessun Dato Di Attivita Trovato.")
 
-    if not dailySummary.empty and not activityData.empty:
-        print("Date presenti in activityData:", activityData["Data"].unique())
-        print("Date presenti in dailySummary:", dailySummary["Data"].unique())
+        if not dailySummary.empty:
+            print(f"Riepilogo Giornaliero: {len(dailySummary)} righe, dal {dailySummary['Data'].min()} al {dailySummary['Data'].max()}")
+        else:
+            print("Nessun Riepilogo Giornaliero Trovato.")
+
+        if not sleepSessions.empty:
+            print("\n--- Sessioni Di Sonno ---")
+            print(sleepSessions.to_string(index=False))
+
+        if not sleepStages.empty:
+            print("\n--- Timeline Fasi Sonno ---")
+            print(sleepStages.to_string(index=False))
