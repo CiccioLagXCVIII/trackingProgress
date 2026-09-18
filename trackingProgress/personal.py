@@ -1,9 +1,11 @@
-import pandas as pd
-import numpy as np
-from datetime import datetime
-import openpyxl
 from copy import copy
+from datetime import datetime, time, timezone
+
+import openpyxl
+import pandas as pd
 import utility
+from openpyxl.cell.cell import MergedCell
+
 
 def updatePersonalData(excelData, EXCEL_PATH):
     # AA Definizione Dei Tag Colorati Per La Visualizzazione
@@ -51,7 +53,7 @@ def updatePersonalData(excelData, EXCEL_PATH):
         currentDeficit = 0.0
 
     # EE Calcolo Della Età Attuale Dell'Utente
-    currentDate = datetime.now()
+    currentDate = datetime.now(timezone.utc)
     calculatedAge = currentDate.year - dobDate.year - ((currentDate.month, currentDate.day) < (dobDate.month, dobDate.day))
 
     # AA Calcolo Del Metabolismo Basale Con Formula Mifflin St Jeor
@@ -86,9 +88,20 @@ def updatePersonalData(excelData, EXCEL_PATH):
     personalSheet['B12'].value = round(currentDeficit, 0)
     
     # AA Inserimento Timestamp Di Esecuzione Nella Nuova Cella B13
-    executionTime = datetime.now()
+    executionTime = datetime.now(timezone.utc)
     personalSheet['B13'].value = executionTime
     personalSheet['B13'].number_format = 'YYYY-MM-DD HH:MM:SS'
+
+    # BB Bonifica Difensiva: Rimozione Di Eventuali Timezone Residue Da Qualsiasi Cella Del Workbook
+    # CC Necessaria Perche' Excel Non Supporta Datetime Con Timezone E Openpyxl Si Blocca In Fase Di Salvataggio
+    for sheet in excelFile.worksheets:
+        for row in sheet.iter_rows():
+            for cell in row:
+                # DD Le MergedCell Non Permettono La Scrittura Diretta Del Valore (Solo La Cella In Alto A Sinistra Lo Ha)
+                if isinstance(cell, MergedCell):
+                    continue
+                if isinstance(cell.value, (datetime, time)) and getattr(cell.value, 'tzinfo', None) is not None:
+                    cell.value = cell.value.replace(tzinfo=None)
 
     # BB Salvataggio Delle Modifiche Nel File Excel
     excelFile.save(EXCEL_PATH)

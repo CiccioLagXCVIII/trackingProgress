@@ -10,6 +10,8 @@ CLR_ALLENAMENTO = "\033[95m"    # Magenta Chiaro Per Il Modulo Allenamento
 CLR_PALESTRA = "\033[35m"       # Viola Per Il Modulo Della Bacheca Record Palestra
 CLR_DIETA = "\033[93m"          # Giallo Chiaro Per Il Modulo Dieta
 CLR_SMARTWATCH = "\033[94m"     # Blu Chiaro Per Il Modulo Smartwatch
+CLR_DASHBOARD = "\033[36m"      # Ciano Per Il Modulo Dashboard
+CLR_TEST = "\033[97m"           # Bianco Brillante Per Il Modulo Di Verifica Sistema
 
 # AA Funzione Per Gestire Input Opzionali
 def optionalInput(prompt):

@@ -1,7 +1,8 @@
-import pandas as pd
+from copy import copy
+
 import numpy as np
 import openpyxl
-from copy import copy
+import pandas as pd
 import utility
 
 

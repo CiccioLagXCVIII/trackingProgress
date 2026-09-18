@@ -1,9 +1,11 @@
-import pandas as pd
-import numpy as np
-from datetime import datetime
-import openpyxl
-import utility
 from copy import copy
+from datetime import datetime, timezone
+
+import numpy as np
+import openpyxl
+import pandas as pd
+import utility
+
 
 def updateMeasuresData(excelData, EXCEL_PATH):
     # AA Definizione Dei Tag Colorati Per La Visualizzazione
@@ -46,7 +48,7 @@ def updateMeasuresData(excelData, EXCEL_PATH):
     scelta = input(f"{tagMisure} Inserisci Numero Corrispondente: ")
 
     if scelta == "1":
-        dataOBJ = datetime.now().date()
+        dataOBJ = datetime.now(timezone.utc).date()
         data = dataOBJ.strftime("%d-%m-%Y")
         print(f"\n{tagMisure} Inserimento Misurazioni Data: {utility.CLR_BOLD}{data}{utility.CLR_RESET}\n")
 

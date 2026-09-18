@@ -4,6 +4,7 @@ import sys
 from datetime import datetime, timezone
 
 # AA Importazione Dei Moduli Del Sistema
+import dashboardSync
 import diet
 import measures
 import pandas as pd
@@ -17,7 +18,8 @@ logger = logging.getLogger(__name__)
 # AA Percorsi Assoluti Per Il File System Di Windows Tramite WSL
 EXCEL_PATH = "/mnt/c/Users/cicci/Documents/Appunti_E_Personale/trackingProgressi/trackingProgressi.xlsx"
 OPENGYM_DATA = "/mnt/c/Users/cicci/Documents/Appunti_E_Personale/trackingProgressi/workoutData.json"
-SMARTWATCH_DB = "/home/lag/privateDashboard/gadgetBridgeSync/Gadgetbridge.db"
+SMARTWATCH_DB = "/mnt/c/Users/cicci/Documents/Appunti_E_Personale/trackingProgressi/gadgetBridgeSync/Gadgetbridge.db"
+DASHBOARD_DB_PATH = "/home/lag/privateDashboard/dashboardData.db"
 
 # BB Inizializzazione E Sincronizzazione All Avvio Del Programma Lineare
 os.system('clear')
@@ -44,6 +46,9 @@ except (OSError, ValueError) as e:
     print(f"{tagErrore} Errore Rilevato: {e}\n")
     sys.exit()
 
+# AA Inizializzazione Del Database Dashboard (Crea Le Tabelle Se Non Esistono Ancora)
+dashboardSync.initializeDashboardDB(DASHBOARD_DB_PATH)
+
 # AA Sincronizzazione Silenziosa Iniziale Del Profilo
 # DD Esecuzione Della Sincronizzazione Silenziosa Iniziale Senza Output
 # EE Soppressione Temporanea Dei Print Per Avviare Direttamente Il Menu
@@ -66,7 +71,7 @@ while True:
     print(f" {utility.CLR_MISURE}1. Inserisci Nuova Misura Corporea{utility.CLR_RESET}")
     print(f" {utility.CLR_DIETA}2. Registra Nuova Fase Alimentare{utility.CLR_RESET}")
     print(f" {utility.CLR_ALLENAMENTO}3. Sincronizza Allenamenti{utility.CLR_RESET}")
-    print(f" {utility.CLR_SMARTWATCH}4. Sincronizza Smartwatch{utility.CLR_RESET}")
+    print(f" {utility.CLR_SMARTWATCH}4. Sincronizza Dashboard{utility.CLR_RESET}")
     print(f" {utility.CLR_PROFILO}5. Mostra Riepilogo Profilo Corrente{utility.CLR_RESET}")
     print(" 6. Esci Dal Programma")
     print("==========================================================")
@@ -124,7 +129,11 @@ while True:
 
     elif scelta == "4":
         os.system('clear')
-        print(f"\n{tagSistema} {utility.CLR_SMARTWATCH}Sincronizzazione Del Profilo Con Lo Smartwatch.{utility.CLR_RESET}\n")
+        # DD Estrazione Dei Dati Smartwatch (Attivita, Riepilogo Giornaliero, Sonno)
+        activityData, dailySummary, sleepSessions, sleepStages = smartwatch.processSmartwatchData(SMARTWATCH_DB)
+        # EE Sincronizzazione Dello Smartwatch E Specchio Dei Dati Excel Verso Il Database Dashboard
+        dashboardSync.syncSmartwatchData(DASHBOARD_DB_PATH, activityData, dailySummary, sleepSessions, sleepStages)
+        dashboardSync.syncTrackingMirror(DASHBOARD_DB_PATH, excelData)
         input(f"\n{tagSistema} Operazione Completata. Premi Invio Per Tornare Al Menu...")
 
     elif scelta == "5":

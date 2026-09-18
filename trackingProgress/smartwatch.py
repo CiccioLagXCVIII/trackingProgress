@@ -15,7 +15,7 @@ def getAvailableDevices(conn):
     """
     try:
         return pd.read_sql_query(queryDevices, conn)
-    except Exception:
+    except (pd.errors.DatabaseError, sqlite3.Error):
         return pd.DataFrame()
 
 
