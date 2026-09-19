@@ -1,7 +1,6 @@
 import sqlite3
 
 import pandas as pd
-import smartwatch
 import utility
 
 # AA Soglia Di Affidabilita Per Le Misurazioni Corporee
@@ -515,8 +514,5 @@ if __name__ == "__main__":
     }
 
     initializeDashboardDB(DASHBOARD_DB_PATH)
-
-    activityData, dailySummary, sleepSessions, sleepStages = smartwatch.processSmartwatchData(SMARTWATCH_DB)
-    syncSmartwatchData(DASHBOARD_DB_PATH, activityData, dailySummary, sleepSessions, sleepStages)
 
     syncTrackingMirror(DASHBOARD_DB_PATH, excelData)

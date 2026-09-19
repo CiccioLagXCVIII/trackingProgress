@@ -3,7 +3,6 @@ import os
 import sqlite3
 
 import pandas as pd
-import smartwatch
 import utility
 
 # AA Percorsi Assoluti, Identici A Quelli Di updateTracking.py
@@ -56,52 +55,6 @@ def verificaExcel():
         segnaRisultato("Lettura Fogli Excel", False, str(e))
 
     return excelData
-
-
-# AA Verifica Diretta Del Parser Smartwatch (Conferma Anche Che Il Percorso SMARTWATCH_DB Sia Corretto)
-def verificaParserSmartwatch():
-    print(f"\n{utility.CLR_TEST}=== Verifica Parser Smartwatch (Esecuzione Diretta) ==={utility.CLR_RESET}")
-    if not os.path.exists(SMARTWATCH_DB):
-        segnaRisultato("Esecuzione Parser Smartwatch", False, "File Gadgetbridge.db Non Trovato, Salto Il Controllo")
-        return
-
-    try:
-        activityData, dailySummary, sleepSessions, sleepStages = smartwatch.processSmartwatchData(SMARTWATCH_DB)
-        segnaRisultato("Esecuzione Parser Smartwatch Senza Errori", True)
-        segnaRisultato("Attivita Estratta", not activityData.empty, f"{len(activityData)} Righe")
-        segnaRisultato("Riepilogo Giornaliero Estratto", not dailySummary.empty, f"{len(dailySummary)} Righe")
-        segnaRisultato("Sessioni Sonno Estratte", not sleepSessions.empty, f"{len(sleepSessions)} Notti")
-    except Exception as e:
-        segnaRisultato("Esecuzione Parser Smartwatch Senza Errori", False, str(e))
-
-
-# AA Verifica Del Database Gadgetbridge: Presenza Dispositivi E Tabelle Smartwatch Attese
-def verificaGadgetbridge():
-    print(f"\n{utility.CLR_TEST}=== Verifica Database Gadgetbridge ==={utility.CLR_RESET}")
-    if not os.path.exists(SMARTWATCH_DB):
-        segnaRisultato("Connessione Database Gadgetbridge", False, "File Non Trovato, Salto Il Controllo")
-        return
-
-    try:
-        conn = sqlite3.connect(SMARTWATCH_DB)
-        devices = pd.read_sql_query("SELECT _id, NAME, MANUFACTURER FROM DEVICE;", conn)
-        segnaRisultato("Connessione Database Gadgetbridge", True, f"{len(devices)} Dispositivi Trovati")
-
-        tabelleAttese = [
-            "XIAOMI_ACTIVITY_SAMPLE", "XIAOMI_DAILY_SUMMARY_SAMPLE",
-            "XIAOMI_SLEEP_TIME_SAMPLE", "XIAOMI_SLEEP_STAGE_SAMPLE"
-        ]
-        for tabella in tabelleAttese:
-            try:
-                conteggio = pd.read_sql_query(f"SELECT COUNT(*) as n FROM {tabella};", conn).iloc[0]['n']
-                segnaRisultato(f"Tabella Presente: {tabella}", True, f"{conteggio} Righe")
-            except Exception:
-                segnaRisultato(f"Tabella Presente: {tabella}", False, "Tabella Non Trovata")
-
-        conn.close()
-    except Exception as e:
-        segnaRisultato("Connessione Database Gadgetbridge", False, str(e))
-
 
 # AA Verifica Completa Del Database Dashboard: Tabelle, Coerenza Specchio, Regressioni Note
 def verificaDashboardDB(excelData):
@@ -268,8 +221,6 @@ if __name__ == "__main__":
 
     verificaPercorsi()
     excelData = verificaExcel()
-    verificaParserSmartwatch()
-    verificaGadgetbridge()
     verificaDashboardDB(excelData)
 
     stampaRiepilogoFinale()

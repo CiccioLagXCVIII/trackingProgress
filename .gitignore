@@ -4,7 +4,7 @@ __pycache__/
 *.pyc
 
 # Dati sensibili / personali - MAI versionare
-gadgetBridgeSync/Gadgetbridge.db
+Gadgetbridge.db
 XiaomiTokenExtractor/
 dashboardData.db
 

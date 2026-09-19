@@ -9,7 +9,6 @@ import diet
 import measures
 import pandas as pd
 import personal
-import smartwatch
 import utility
 import workout
 
@@ -18,7 +17,6 @@ logger = logging.getLogger(__name__)
 # AA Percorsi Assoluti Per Il File System Di Windows Tramite WSL
 EXCEL_PATH = "/mnt/c/Users/cicci/Documents/Appunti_E_Personale/trackingProgressi/trackingProgressi.xlsx"
 OPENGYM_DATA = "/mnt/c/Users/cicci/Documents/Appunti_E_Personale/trackingProgressi/workoutData.json"
-SMARTWATCH_DB = "/mnt/c/Users/cicci/Documents/Appunti_E_Personale/trackingProgressi/gadgetBridgeSync/Gadgetbridge.db"
 DASHBOARD_DB_PATH = "/home/lag/privateDashboard/dashboardData.db"
 
 # BB Inizializzazione E Sincronizzazione All Avvio Del Programma Lineare
@@ -129,10 +127,10 @@ while True:
 
     elif scelta == "4":
         os.system('clear')
-        # DD Estrazione Dei Dati Smartwatch (Attivita, Riepilogo Giornaliero, Sonno)
-        activityData, dailySummary, sleepSessions, sleepStages = smartwatch.processSmartwatchData(SMARTWATCH_DB)
-        # EE Sincronizzazione Dello Smartwatch E Specchio Dei Dati Excel Verso Il Database Dashboard
-        dashboardSync.syncSmartwatchData(DASHBOARD_DB_PATH, activityData, dailySummary, sleepSessions, sleepStages)
+        # DD Sincronizzazione Smartwatch Temporaneamente Sospesa (Vedi smartwatchArchive/)
+        # activityData, dailySummary, sleepSessions, sleepStages = smartwatch.processSmartwatchData(SMARTWATCH_DB)
+        # dashboardSync.syncSmartwatchData(DASHBOARD_DB_PATH, activityData, dailySummary, sleepSessions, sleepStages)
+        # EE Specchio Dei Dati Excel Verso Il Database Dashboard (Resta Attivo)
         dashboardSync.syncTrackingMirror(DASHBOARD_DB_PATH, excelData)
         input(f"\n{tagSistema} Operazione Completata. Premi Invio Per Tornare Al Menu...")
 
